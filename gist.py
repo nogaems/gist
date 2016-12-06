@@ -18,6 +18,7 @@ import select
 import logging as log
 import getpass
 import time
+import datetime
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
                                  description="""
@@ -40,7 +41,7 @@ parser.add_argument('--verbose', '-v', action='store_true',
 args = parser.parse_args()
 
 if args.verbose:
-    log.basicConfig(format="%(levelname)s: %(message)s", level=log.DEBUG)
+    log.basicConfig(format="%(levelname)s: %(message)s", level=log.INFO)
     log.info('Verbose output.')
 else:
     log.basicConfig(format="%(levelname)s: %(message)s")
@@ -53,12 +54,13 @@ if select.select([sys.stdin,],[],[],0.0)[0]:
         content += line
 else:
     if args.file:
-        log.info('Try to load file \'{}\''.format(args.file))
+        log.info('Trying to load file \'{}\''.format(args.file))
         try:
             content = open(args.file).read()
         except (FileNotFoundError, PermissionError) as e:
             log.error(e)
             exit(1)
+        log.info('Done')
     else:
         log.error('Please specify the file which to be sended!')
         exit(1)
@@ -79,13 +81,14 @@ if args.user:
 root_endpoint = 'https://api.github.com'
 
 if account != (None, None):
+    log.info('Account data validation')
     try:
         account_check = requests.get(root_endpoint, auth=account)
     except Exception as e:
         log.error('Some error has occured: {}'.format(e))
         exit(1)
     parsed = json.loads(account_check.text)    
-    if account_check.status_code == 402:
+    if account_check.status_code in (401, 402):
         log.error('Invalid account data!')
         exit(1)
     elif account_check.status_code != 200:
@@ -94,6 +97,7 @@ if account != (None, None):
             json.loads(account_check.text)['message']
         ))
         exit(1)
+    log.info('Correct')
         
 rate_limit_url = 'https://api.github.com/rate_limit'
 
@@ -109,6 +113,9 @@ parsed = json.loads(rate_limit.text)
 if parsed['rate']['remaining'] < 1:
     wait = int((int(parsed['rate']['reset']) - time.time)/60)
     log.error('You achieved access rate limit. Please wait for {} minute(-s) for the access rate counter reset.'.format(wait))
+log.info('Access rate limit is not earned yet, {} time(s) left. Reset in {}'.format(
+    parsed['rate']['remaining'],
+    datetime.datetime.fromtimestamp(int(parsed['rate']['reset'])).strftime('%Y-%m-%d %H:%M:%S')))
 
 gists_url = 'https://api.github.com/gists'
 filename = args.file.split('/')[-1] if args.file else sys.stdin.name
@@ -123,13 +130,15 @@ headers = {
 }
 
 try:
+    log.info('Tryind to upload data')
     response = requests.post(gists_url, json.dumps(headers))
 except Exception as e:
     log.error('Some error has occured: {}'.format(e))
     exit(1)
 parsed = json.loads(response.text)
-if response.status_code == 201:    
-    print('HTML link: {}\nraw link:{}'.format(
+if response.status_code == 201:
+    log.info('Success!')
+    print('HTML link: {}\nraw link: {}'.format(
         parsed['html_url'],
         parsed['files'][filename]['raw_url']))
     exit(0)
